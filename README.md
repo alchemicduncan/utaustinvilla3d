@@ -55,6 +55,7 @@ rcssserver3d into `/opt/simspark`, then you build the agent against it:
 # or Docker Desktop
 ./scripts/build-in-docker.sh           # -> ./agentspark
 ./scripts/build-in-docker.sh smoke     # build + run agent against rcssserver3d
+./scripts/build-in-docker.sh getup     # force a fall, verify the get-up behavior
 ./scripts/build-in-docker.sh shell     # interactive shell in the container
 ```
 

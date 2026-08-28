@@ -40,9 +40,24 @@ smoke() {
   '
 }
 
+getup() {
+  run bash -c '
+    set -e
+    [ -x ./agentspark ] || { rm -f CMakeCache.txt; cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null; make -j"$(nproc)" >/dev/null; }
+    rcssserver3d --agent-port 3100 --server-port 3200 >/tmp/server.log 2>&1 &
+    sleep 4
+    ./agentspark --host=127.0.0.1 --port 3100 --team Left --unum 1 --type 0 \
+      --paramsfile paramfiles/defaultParams.txt --paramsfile paramfiles/defaultParams_t0.txt \
+      >/tmp/agent.log 2>&1 &
+    sleep 10
+    python3 scripts/getup-test.py
+  '
+}
+
 case "${1:-build}" in
-  build) build ;;
-  shell) run bash ;;
+  build)      build ;;
+  shell)      run bash ;;
   smoke|test) smoke ;;
-  *)     run "$@" ;;
+  getup)      getup ;;
+  *)          run "$@" ;;
 esac
