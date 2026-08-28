@@ -276,11 +276,13 @@ public:
     void drawAgentText(string text, float r, float g, float b);
 
     /* draw to teammate with uniform "uNum" */
-    void drawAgentText(string text, int uNum, RVSender::Color c=(RVSender::Color)uNum);
+    void drawAgentText(string text, int uNum);
+    void drawAgentText(string text, int uNum, RVSender::Color c);
     void drawAgentText(string text, int uNum, float r, float g, float b);
 
     /* draw to player on team "side", with uniform "uNum" */
-    void drawAgentText(string text, int uNum, int side, RVSender::Color c=(RVSender::Color)uNum);
+    void drawAgentText(string text, int uNum, int side);
+    void drawAgentText(string text, int uNum, int side, RVSender::Color c);
     void drawAgentText(string text, int uNum, int side, float r, float g, float b);
 
     /* defaults to removing text from self, but may specify a teammate, or any player on the field */

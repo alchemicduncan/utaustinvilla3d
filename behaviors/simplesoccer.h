@@ -3,6 +3,9 @@
 
 #include "naobehavior.h"
 
+#include <list>
+#include <set>
+
 enum Role {
     GOALIE,
     SUPPORTER,

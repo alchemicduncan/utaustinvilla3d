@@ -43,7 +43,41 @@ It's optional (recommended) to install the roboviz monitor:
 https://github.com/magmaOffenburg/RoboViz
 
 
-### To build:
+### Build in a container (recommended, works on macOS):
+
+SimSpark / rcssserver3d aren't packaged in nixpkgs and current SimSpark only
+builds on Ubuntu 22.04+, so the containerised build uses Ubuntu + apt (the same
+setup SimSpark's own CI uses). The `Dockerfile` builds SimSpark 0.3.8 +
+rcssserver3d into `/opt/simspark`, then you build the agent against it:
+
+```bash
+# needs a Linux container engine: colima (`brew install colima && colima start`)
+# or Docker Desktop
+./scripts/build-in-docker.sh           # -> ./agentspark
+./scripts/build-in-docker.sh smoke     # build + run agent against rcssserver3d
+./scripts/build-in-docker.sh shell     # interactive shell in the container
+```
+
+The repo is bind-mounted, so `./agentspark` ends up in your working tree. The
+binary is a Linux executable — run it inside the container (or on Linux), not
+on the macOS host.
+
+### Native dev shell (devenv.sh, Linux):
+
+[devenv.sh](https://devenv.sh) provides the build toolchain (GCC >= 13, CMake,
+Boost). It does **not** provide simspark — install that yourself, then create
+`devenv.local.nix` pointing `SPARK_DIR` at it:
+
+```nix
+{ ... }: { env.SPARK_DIR = "/usr"; }
+```
+
+```bash
+devenv shell          # or: direnv allow   (auto-activates via .envrc)
+cmake . && make -j
+```
+
+### To build (plain):
 ```bash
 cmake . 
 ```
@@ -52,6 +86,9 @@ cmake .
 ```bash
 make
 ```
+
+> **Note:** building against a modern toolchain (GCC 13+) required small
+> standards-compliance fixes to `rvdraw/` and `behaviors/simplesoccer.*`.
 
 ### Instructions for running agent:
 First be sure to start the simulation server running.
