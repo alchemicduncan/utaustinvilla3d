@@ -53,10 +53,12 @@ rcssserver3d into `/opt/simspark`, then you build the agent against it:
 ```bash
 # needs a Linux container engine: colima (`brew install colima && colima start`)
 # or Docker Desktop
-./scripts/build-in-docker.sh           # -> ./agentspark
-./scripts/build-in-docker.sh smoke     # build + run agent against rcssserver3d
-./scripts/build-in-docker.sh getup     # force a fall, verify the get-up behavior
-./scripts/build-in-docker.sh shell     # interactive shell in the container
+./scripts/build-in-docker.sh              # -> ./agentspark
+./scripts/build-in-docker.sh smoke        # build + run agent against rcssserver3d
+./scripts/build-in-docker.sh getup        # force a fall, verify the get-up behavior
+./scripts/build-in-docker.sh pass         # one targeted-kick episode (baseline fitness)
+./scripts/build-in-docker.sh pass-train   # CEM training loop for the pass (see optimization/)
+./scripts/build-in-docker.sh shell        # interactive shell in the container
 ```
 
 The repo is bind-mounted, so `./agentspark` ends up in your working tree. The

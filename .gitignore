@@ -11,3 +11,6 @@ libs/*.so*
 .devenv*
 devenv.local.nix
 .direnv
+
+# optimization run artifacts
+paramfiles/pass_best.txt

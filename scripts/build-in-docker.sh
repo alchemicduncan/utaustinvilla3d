@@ -54,10 +54,28 @@ getup() {
   '
 }
 
+ensure_build='[ -x ./agentspark ] || { rm -f CMakeCache.txt; cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null; make -j"$(nproc)" >/dev/null; }'
+
+pass() {
+  # one baseline pass episode with the stock kick params
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-pass-optimization.sh 0 paramfiles/pass_defaults.txt /tmp/pass_fitness.txt
+    echo; echo -n 'mean fitness (negative delivery error): '; cat /tmp/pass_fitness.txt
+  "
+}
+
+pass_train() {
+  run bash -c "$ensure_build; python3 optimization/train_pass.py ${*:-}"
+}
+
 case "${1:-build}" in
-  build)      build ;;
-  shell)      run bash ;;
-  smoke|test) smoke ;;
-  getup)      getup ;;
-  *)          run "$@" ;;
+  build)       build ;;
+  shell)       run bash ;;
+  smoke|test)  smoke ;;
+  getup)       getup ;;
+  pass)        pass ;;
+  pass-train)  shift; pass_train "$@" ;;
+  *)           run "$@" ;;
 esac

@@ -229,6 +229,183 @@ void writeToOutputFile(const string &filename, const string &output) {
 /*
  *
  *
+ * PASS OPTIMIZATION AGENT
+ *
+ * Kick the ball from the field centre to a target point and score by delivery
+ * error.  See optimizationbehaviors.h for the overall idea.
+ *
+ */
+
+static const int PASS_NUM_TRIALS = 5;
+// The ball counts as struck once it has left the centre by this much.
+static const double PASS_BALL_MOVED_DIST = 0.5;     // m
+// Per-trial time budget after the initial settle.
+static const double PASS_TRIAL_TIMEOUT = 20.0;      // s
+
+OptimizationBehaviorPass::OptimizationBehaviorPass(const std::string teamName,
+        int uNum, const map<string, string>& namedParams_, const string& rsg_,
+        const string& outputFile_) :
+    NaoBehavior(teamName, uNum, namedParams_, rsg_), outputFile(outputFile_),
+    failedLastBeamCheck(false), trial(0), totalFitness(0.0), INIT_WAIT_TIME(2.0)
+{
+    // Ground-truth ball / self pose for accurate scoring (see optimization/README.md).
+    worldModel->setUseGroundTruthDataForLocalization(true);
+    timeStart = -1;
+    computeTarget();
+    initTrial();
+}
+
+void OptimizationBehaviorPass::computeTarget() {
+    double dist  = atof(namedParams.find("pass_target_dist")->second.c_str());
+    double angle = atof(namedParams.find("pass_target_angle")->second.c_str());
+    passTarget = VecPosition(dist * cosDeg(angle), dist * sinDeg(angle), 0);
+}
+
+void OptimizationBehaviorPass::beam(double& beamX, double& beamY, double& beamAngle) {
+    beamX     = atof(namedParams.find("pass_beam_x")->second.c_str());
+    beamY     = atof(namedParams.find("pass_beam_y")->second.c_str());
+    beamAngle = atof(namedParams.find("pass_beam_angle")->second.c_str());
+}
+
+void OptimizationBehaviorPass::initTrial() {
+    hasKicked = false;
+    beamChecked = false;
+    backwards = false;
+    fallen = false;
+    kickStartTime = -1;
+    timeStart = worldModel->getTime();
+    initialized = false;
+    initBeamed = false;
+    resetSkills();
+    // BeforeKickOff re-centres the ball; beam() re-positions the robot.
+    setMonMessage("(playMode BeforeKickOff)");
+}
+
+SkillType OptimizationBehaviorPass::selectSkill() {
+    if (timeStart < 0 || trial >= PASS_NUM_TRIALS) {
+        return SKILL_STAND;
+    }
+
+    double time = worldModel->getTime();
+    if (time - timeStart <= INIT_WAIT_TIME) {
+        return SKILL_STAND;
+    }
+
+    // Wait until the beam has been verified before doing anything.
+    if (!beamChecked) {
+        return SKILL_STAND;
+    }
+
+    // Walk up to the ball (if needed), line up and kick toward the target.
+    return kickBall(KICK_FORWARD, passTarget);
+}
+
+void OptimizationBehaviorPass::updateFitness() {
+    if (trial >= PASS_NUM_TRIALS) {
+        writeFitnessToOutputFile(totalFitness / double(PASS_NUM_TRIALS));
+        return;
+    }
+
+    double time = worldModel->getTime();
+    if (time - timeStart <= INIT_WAIT_TIME) {
+        return;
+    }
+
+    if (!beamChecked) {
+        beamChecked = true;
+        VecPosition meTruth = worldModel->getMyPositionGroundTruth();
+        meTruth.setZ(0);
+        double beamX, beamY, beamAngle;
+        beam(beamX, beamY, beamAngle);
+        VecPosition meDesired(beamX, beamY, 0);
+        double angle = worldModel->getMyAngDegGroundTruth();
+        double ballDistance = worldModel->getBallGroundTruth().getMagnitude();
+
+        if (meTruth.getDistanceTo(meDesired) > 0.1 || ballDistance > 0.1 ||
+                fabs(angle - beamAngle) > 3) {
+            // Give the beam one more chance before counting a failure.
+            if (failedLastBeamCheck) {
+                failedLastBeamCheck = false;
+                totalFitness += -100;
+                trial++;
+            } else {
+                failedLastBeamCheck = true;
+            }
+            initTrial();
+            return;
+        }
+        failedLastBeamCheck = false;
+        setMonMessage("(playMode PlayOn)");
+        return;
+    }
+
+    VecPosition ballTruth = worldModel->getBallGroundTruth();
+    ballTruth.setZ(0);
+
+    // The ball starts at the field centre; once it has clearly left, it was
+    // struck. (Displacement is more reliable here than sampling absVel.)
+    if (!hasKicked && ballTruth.getMagnitude() > PASS_BALL_MOVED_DIST) {
+        hasKicked = true;
+        kickStartTime = time;
+    }
+
+    if (ballTruth.getX() < -0.25) {
+        backwards = true;
+    }
+    if (worldModel->isFallen()) {
+        fallen = true;
+    }
+
+    bool settled = hasKicked && kickStartTime > 0 &&
+                   time - kickStartTime > 0.5 && !isBallMoving(this->worldModel);
+    bool timedOut = time - (timeStart + INIT_WAIT_TIME) > PASS_TRIAL_TIMEOUT;
+
+    if (!settled && !timedOut) {
+        return;
+    }
+
+    double error = ballTruth.getDistanceTo(passTarget);
+    double fitness = -error;
+
+    if (!hasKicked || backwards) {
+        // Whiffed or kicked the wrong way: worse than any legitimate miss.
+        fitness = -(passTarget.getMagnitude() + 5.0);
+    }
+    if (fallen) {
+        fitness -= 3.0;
+    }
+
+    cout << "Trial " << trial
+         << "  target=(" << passTarget.getX() << ", " << passTarget.getY() << ")"
+         << "  ball=(" << ballTruth.getX() << ", " << ballTruth.getY() << ")"
+         << "  error=" << error
+         << "  kicked=" << hasKicked << " backwards=" << backwards
+         << " fell=" << fallen
+         << "  fitness=" << fitness << endl;
+
+    totalFitness += fitness;
+    trial++;
+    initTrial();
+}
+
+void OptimizationBehaviorPass::writeFitnessToOutputFile(double fitness) {
+    static bool written = false;
+    if (written) {
+        return;
+    }
+    written = true;
+    LOG(fitness);
+    cout << "Mean fitness over " << PASS_NUM_TRIALS << " trials = " << fitness << endl;
+    fstream file;
+    file.open(outputFile.c_str(), ios::out);
+    file << fitness << endl;
+    file.close();
+}
+
+
+/*
+ *
+ *
  * WALK FORWARD OPTIMIZATION AGENT
  *
  *

@@ -515,6 +515,14 @@ void Run()
                 rsg,
                 outputFile);
     }
+    else if (agentType == "passAgent") {
+        cerr << "creating OptimizationBehaviorPass" << endl;
+        behavior = new OptimizationBehaviorPass(  teamName,
+                uNum,
+                namedParams,
+                rsg,
+                outputFile);
+    }
     else if (agentType == "walkForwardAgent") {
         cerr << "creating OptimizationBehaviorWalkForward" << endl;
         behavior = new OptimizationBehaviorWalkForward(  teamName,
