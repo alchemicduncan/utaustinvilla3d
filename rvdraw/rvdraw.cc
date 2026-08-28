@@ -589,6 +589,10 @@ void RVSender::drawAgentText(string text, float r, float g, float b) {
     drawAgentText(text, uNum, side, r, g, b);
 }
 
+void RVSender::drawAgentText(string text, int uNum) {
+    drawAgentText(text, uNum, (RVSender::Color)uNum);
+}
+
 void RVSender::drawAgentText(string text, int uNum, RVSender::Color c) {
     if (!isInit()) {
         return;
@@ -603,6 +607,10 @@ void RVSender::drawAgentText(string text, int uNum, float r, float g, float b) {
         return;
     }
     drawAgentText(text, uNum, side, r, g, b);
+}
+
+void RVSender::drawAgentText(string text, int uNum, int side) {
+    drawAgentText(text, uNum, side, (RVSender::Color)uNum);
 }
 
 void RVSender::drawAgentText(string text, int uNum, int side, RVSender::Color c) {
