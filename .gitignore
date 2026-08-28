@@ -6,3 +6,8 @@ CMakeFiles
 Makefile
 agentspark
 libs/*.so*
+
+# devenv / direnv
+.devenv*
+devenv.local.nix
+.direnv
