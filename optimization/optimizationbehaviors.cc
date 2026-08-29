@@ -1,5 +1,6 @@
 #include "optimizationbehaviors.h"
 #include <fstream>
+#include <sstream>
 
 
 /*
@@ -236,7 +237,10 @@ void writeToOutputFile(const string &filename, const string &output) {
  *
  */
 
-static const int PASS_NUM_TRIALS = 5;
+// Kicks per episode. More trials -> lower fitness variance (the per-trial
+// delivery error has ~1.5 m std), at a proportional cost in wall time.
+// Override with the pass_num_trials param.
+static const int PASS_NUM_TRIALS_DEFAULT = 20;
 // The ball counts as struck once it has left the centre by this much.
 static const double PASS_BALL_MOVED_DIST = 0.5;     // m
 // Per-trial time budget after the initial settle.
@@ -251,6 +255,18 @@ OptimizationBehaviorPass::OptimizationBehaviorPass(const std::string teamName,
     // Ground-truth ball / self pose for accurate scoring (see optimization/README.md).
     worldModel->setUseGroundTruthDataForLocalization(true);
     timeStart = -1;
+    map<string, string>::const_iterator it = namedParams.find("pass_num_trials");
+    numTrials = (it != namedParams.end()) ? atoi(it->second.c_str())
+                                          : PASS_NUM_TRIALS_DEFAULT;
+
+    it = namedParams.find("pass_two_agent");
+    twoAgent = (it != namedParams.end() && atoi(it->second.c_str()) != 0);
+    passerUnum = uNum;
+    it = namedParams.find("pass_receiver_unum");
+    receiverUnum = (it != namedParams.end()) ? atoi(it->second.c_str()) : 3;
+    it = namedParams.find("pass_receiver_team");
+    receiverTeam = (it != namedParams.end()) ? it->second : string("Right");
+
     computeTarget();
     initTrial();
 }
@@ -267,6 +283,22 @@ void OptimizationBehaviorPass::beam(double& beamX, double& beamY, double& beamAn
     beamAngle = atof(namedParams.find("pass_beam_angle")->second.c_str());
 }
 
+std::string OptimizationBehaviorPass::twoAgentResetMsg() {
+    double bx = atof(namedParams.find("pass_beam_x")->second.c_str());
+    double by = atof(namedParams.find("pass_beam_y")->second.c_str());
+    double heading = atof(namedParams.find("pass_beam_angle")->second.c_str());
+    double rxHeading = atof(namedParams.find("pass_target_angle")->second.c_str()) + 180.0;
+    std::ostringstream m;
+    m << "(playMode PlayOn)"
+      << "(ball (pos 0 0 0.042) (vel 0 0 0))"
+      << "(agent (unum " << passerUnum << ") (team " << agentTeamName
+      << ") (pos " << bx << " " << by << " 0.4) (rot 0 0 " << heading << "))"
+      << "(agent (unum " << receiverUnum << ") (team " << receiverTeam
+      << ") (pos " << passTarget.getX() << " " << passTarget.getY()
+      << " 0.4) (rot 0 0 " << rxHeading << "))";
+    return m.str();
+}
+
 void OptimizationBehaviorPass::initTrial() {
     hasKicked = false;
     beamChecked = false;
@@ -275,14 +307,22 @@ void OptimizationBehaviorPass::initTrial() {
     kickStartTime = -1;
     timeStart = worldModel->getTime();
     initialized = false;
-    initBeamed = false;
     resetSkills();
-    // BeforeKickOff re-centres the ball; beam() re-positions the robot.
-    setMonMessage("(playMode BeforeKickOff)");
+
+    if (twoAgent) {
+        // Stay in PlayOn; reposition the ball and both agents via the monitor
+        // (self-beams are ignored outside dead-ball playmodes).
+        initBeamed = true;
+        setMonMessage(twoAgentResetMsg());
+    } else {
+        initBeamed = false;
+        // BeforeKickOff re-centres the ball; beam() re-positions the robot.
+        setMonMessage("(playMode BeforeKickOff)");
+    }
 }
 
 SkillType OptimizationBehaviorPass::selectSkill() {
-    if (timeStart < 0 || trial >= PASS_NUM_TRIALS) {
+    if (timeStart < 0 || trial >= numTrials) {
         return SKILL_STAND;
     }
 
@@ -301,8 +341,8 @@ SkillType OptimizationBehaviorPass::selectSkill() {
 }
 
 void OptimizationBehaviorPass::updateFitness() {
-    if (trial >= PASS_NUM_TRIALS) {
-        writeFitnessToOutputFile(totalFitness / double(PASS_NUM_TRIALS));
+    if (trial >= numTrials) {
+        writeFitnessToOutputFile(totalFitness / double(numTrials));
         return;
     }
 
@@ -313,6 +353,27 @@ void OptimizationBehaviorPass::updateFitness() {
 
     if (!beamChecked) {
         beamChecked = true;
+
+        if (twoAgent) {
+            // Re-send the repos: the first send (in initTrial, right after this
+            // agent connects) can race the receiver's connection.
+            setMonMessage(twoAgentResetMsg());
+            double ballDistance = worldModel->getBallGroundTruth().getMagnitude();
+            if (ballDistance > 0.3) {
+                if (failedLastBeamCheck) {
+                    failedLastBeamCheck = false;
+                    totalFitness += -100;
+                    trial++;
+                } else {
+                    failedLastBeamCheck = true;
+                }
+                initTrial();
+                return;
+            }
+            failedLastBeamCheck = false;
+            return;   // already in PlayOn
+        }
+
         VecPosition meTruth = worldModel->getMyPositionGroundTruth();
         meTruth.setZ(0);
         double beamX, beamY, beamAngle;
@@ -395,7 +456,160 @@ void OptimizationBehaviorPass::writeFitnessToOutputFile(double fitness) {
     }
     written = true;
     LOG(fitness);
-    cout << "Mean fitness over " << PASS_NUM_TRIALS << " trials = " << fitness << endl;
+    cout << "Mean fitness over " << numTrials << " trials = " << fitness << endl;
+    fstream file;
+    file.open(outputFile.c_str(), ios::out);
+    file << fitness << endl;
+    file.close();
+}
+
+
+/*
+ *
+ *
+ * PASS RECEIVER AGENT (two-agent pass)
+ *
+ * See optimizationbehaviors.h. This is the second agent; it observes, moves to
+ * the ball once it is struck, and owns scoring for the pass.
+ *
+ */
+OptimizationBehaviorPassReceiver::OptimizationBehaviorPassReceiver(
+        const std::string teamName, int uNum, const map<string, string>& namedParams_,
+        const string& rsg_, const string& outputFile_) :
+    NaoBehavior(teamName, uNum, namedParams_, rsg_), outputFile(outputFile_),
+    trial(0), totalFitness(0.0), wasBallCentred(false), sawFirstReset(false)
+{
+    worldModel->setUseGroundTruthDataForLocalization(true);
+
+    map<string, string>::const_iterator it = namedParams.find("pass_num_trials");
+    numTrials = (it != namedParams.end()) ? atoi(it->second.c_str()) : 20;
+    it = namedParams.find("pass_receiver_catch_radius");
+    catchRadius = (it != namedParams.end()) ? atof(it->second.c_str()) : 0.5;
+    it = namedParams.find("pass_receiver_reach");
+    reach = (it != namedParams.end()) ? atof(it->second.c_str()) : 2.0;
+
+    double dist  = atof(namedParams.find("pass_target_dist")->second.c_str());
+    double angle = atof(namedParams.find("pass_target_angle")->second.c_str());
+    rendezvous = VecPosition(dist * cosDeg(angle), dist * sinDeg(angle), 0);
+
+    resetTrial();
+}
+
+void OptimizationBehaviorPassReceiver::beam(double& beamX, double& beamY, double& beamAngle) {
+    beamX = rendezvous.getX();
+    beamY = rendezvous.getY();
+    // Face back toward the passer / incoming ball.
+    beamAngle = atof(namedParams.find("pass_target_angle")->second.c_str()) + 180.0;
+}
+
+void OptimizationBehaviorPassReceiver::resetTrial() {
+    minBallDist = 1e9;
+    travel = 0;
+    ballKicked = false;
+    trialStartTime = worldModel->getTime();
+    initialized = false;
+    initBeamed = true;   // the passer repositions us via the monitor
+    resetSkills();
+}
+
+SkillType OptimizationBehaviorPassReceiver::selectSkill() {
+    if (trial >= numTrials) {
+        return SKILL_STAND;
+    }
+    if (worldModel->getPlayMode() != PM_PLAY_ON || !ballKicked) {
+        // Hold position at the rendezvous until the ball is on its way.
+        return SKILL_STAND;
+    }
+    VecPosition ball = worldModel->getBallGroundTruth();
+    ball.setZ(0);
+    VecPosition me = worldModel->getMyPositionGroundTruth();
+    me.setZ(0);
+    // Only go for a ball that comes within reach of where we were standing, and
+    // give up once we have strayed too far - a short / misdirected pass is simply
+    // not collectable and should score badly (rather than being chased forever).
+    if (rendezvous.getDistanceTo(ball) > reach ||
+            rendezvous.getDistanceTo(me) > reach + 1.0) {
+        return SKILL_STAND;
+    }
+    return goToTarget(ball);
+}
+
+void OptimizationBehaviorPassReceiver::scoreTrial() {
+    double fitness;
+    if (!ballKicked) {
+        fitness = -(rendezvous.getMagnitude() + 5.0);   // whiffed
+    } else {
+        // Closest the ball got to the receiver, plus what it cost the receiver
+        // to get there. A perfect pass arrives at the receiver's feet for free.
+        fitness = -minBallDist - 0.5 * travel;
+        if (minBallDist < catchRadius) {
+            fitness += 2.0;                              // pass connected
+        }
+    }
+
+    cout << "Trial " << trial
+         << "  minBallDist=" << minBallDist
+         << "  receiverTravel=" << travel
+         << "  kicked=" << ballKicked
+         << "  fitness=" << fitness << endl;
+
+    totalFitness += fitness;
+}
+
+void OptimizationBehaviorPassReceiver::updateFitness() {
+    if (trial >= numTrials) {
+        writeFitnessToOutputFile(totalFitness / double(numTrials));
+        return;
+    }
+
+    VecPosition me = worldModel->getMyPositionGroundTruth();
+    me.setZ(0);
+    VecPosition ball = worldModel->getBallGroundTruth();
+    ball.setZ(0);
+
+    if (!ballKicked && ball.getMagnitude() > 0.5) {
+        ballKicked = true;
+    }
+    // Skip implausible ground-truth reads (transient during a teleport).
+    if (ballKicked && me.getMagnitude() < 20.0) {
+        double d = me.getDistanceTo(ball);
+        if (d < minBallDist) {
+            minBallDist = d;
+        }
+        double t = rendezvous.getDistanceTo(me);
+        if (t > travel) {
+            travel = t;
+        }
+    }
+
+    // The passer teleports the ball to exactly the centre at the start of every
+    // trial. A rising edge of "ball is dead centre" marks a trial boundary.
+    // A whiffed trial leaves the ball near the centre already (no rising edge),
+    // so also advance on a generous per-trial timeout.
+    bool ballCentred = ball.getMagnitude() < 0.05;
+    bool boundary = (ballCentred && !wasBallCentred);
+    bool timedOut = (worldModel->getTime() - trialStartTime > 30.0);
+
+    if (boundary || timedOut) {
+        if (!sawFirstReset && boundary) {
+            sawFirstReset = true;          // first reset: nothing to score yet
+        } else {
+            scoreTrial();
+            trial++;
+            resetTrial();
+        }
+    }
+    wasBallCentred = ballCentred;
+}
+
+void OptimizationBehaviorPassReceiver::writeFitnessToOutputFile(double fitness) {
+    static bool written = false;
+    if (written) {
+        return;
+    }
+    written = true;
+    LOG(fitness);
+    cout << "Receiver mean fitness over " << numTrials << " trials = " << fitness << endl;
     fstream file;
     file.open(outputFile.c_str(), ios::out);
     file << fitness << endl;

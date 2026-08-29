@@ -58,6 +58,8 @@ rcssserver3d into `/opt/simspark`, then you build the agent against it:
 ./scripts/build-in-docker.sh getup        # force a fall, verify the get-up behavior
 ./scripts/build-in-docker.sh pass         # one targeted-kick episode (baseline fitness)
 ./scripts/build-in-docker.sh pass-train   # CEM training loop for the pass (see optimization/)
+./scripts/build-in-docker.sh pass2        # one two-agent pass episode (passer + receiver)
+./scripts/build-in-docker.sh pass2-train  # CEM training loop for the two-agent pass
 ./scripts/build-in-docker.sh shell        # interactive shell in the container
 ```
 

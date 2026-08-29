@@ -27,3 +27,16 @@ Also a good idea is to turn off real-time mode and turn on sync mode for faster 
 * **In the container:** `./scripts/build-in-docker.sh pass` (one baseline episode) or `./scripts/build-in-docker.sh pass-train --iterations 15 --pop 16 --jobs 4`.
 
 **Contextual (adaptive) version:** sample a different target per episode, write `pass_target_dist` / `pass_target_angle` into the candidate params file alongside the kick params, and make the policy a function of the target — i.e. learn `π(kick_params | target)` rather than a single fixed kick.
+
+### Two-agent pass (`passReceiverAgent`)
+
+A second agent (`OptimizationBehaviorPassReceiver`, same team, `--unum 3`) is beamed to the rendezvous point, holds position, and — once the ball is on its way and comes within `pass_receiver_reach` — walks to it. It also owns scoring: each trial is `-min(ball→receiver distance) - 0.5·(receiver travel)`, plus a `+2` bonus if the ball got within `pass_receiver_catch_radius`. This rewards passes that actually *arrive at a teammate*, penalises short / misdirected ones, and charges for how far the receiver had to chase.
+
+In two-agent mode the passer stays in `PlayOn` and repositions the ball + both agents each trial with monitor `repos` commands (`pass_two_agent` / `pass_2agent.txt`), because self-beams are ignored outside dead-ball playmodes and `BeforeKickOff` would drag the rendezvous onside.
+
+* **One episode:** `./start-2agent-pass.sh <body_type> <params_file> <output_file>`
+* **In the container:** `./scripts/build-in-docker.sh pass2` or `pass2-train [--iterations N --pop M --jobs J]`
+
+Known limitation: the monitor `repos` teleports the torso but does not fully reset joint state, so over a long episode the passer occasionally destabilises and whiffs the last few trials (scored as a miss). Keep `pass_num_trials` modest, or add a brief `(playMode BeforeKickOff)` blip for a full reset.
+
+**Next:** make the receiver learned too (interception timing, first touch); or move the rendezvous each episode so the passer must *lead* a receiver that is already moving.

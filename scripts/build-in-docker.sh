@@ -70,12 +70,29 @@ pass_train() {
   run bash -c "$ensure_build; python3 optimization/train_pass.py ${*:-}"
 }
 
+pass2() {
+  # one two-agent pass episode (passer + moving receiver)
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-2agent-pass.sh 0 paramfiles/pass_defaults.txt /tmp/pass2_fitness.txt
+    echo; echo -n 'receiver mean fitness (negative closest-approach - travel + bonus): '; cat /tmp/pass2_fitness.txt
+    echo '--- per-trial ---'; grep -hE '^Trial' /tmp/pass2_receiver_*.log | tail -20
+  "
+}
+
+pass2_train() {
+  run bash -c "$ensure_build; python3 optimization/train_pass.py --script optimization/start-2agent-pass.sh ${*:-}"
+}
+
 case "${1:-build}" in
   build)       build ;;
   shell)       run bash ;;
   smoke|test)  smoke ;;
   getup)       getup ;;
   pass)        pass ;;
+  pass2)       pass2 ;;
   pass-train)  shift; pass_train "$@" ;;
+  pass2-train) shift; pass2_train "$@" ;;
   *)           run "$@" ;;
 esac

@@ -61,19 +61,77 @@ class OptimizationBehaviorPass : public NaoBehavior {
     bool fallen;
 
     int trial;
+    int numTrials;
     double totalFitness;
 
     double INIT_WAIT_TIME;
     VecPosition passTarget;
 
+    // Two-agent mode: stay in PlayOn, reposition ball + both agents via monitor.
+    bool twoAgent;
+    int passerUnum;
+    int receiverUnum;
+    string receiverTeam;
+
     void initTrial();
     void computeTarget();
+    std::string twoAgentResetMsg();
     void writeFitnessToOutputFile(double fitness);
 
 public:
 
     OptimizationBehaviorPass(const std::string teamName, int uNum, const map<
                              string, string>& namedParams_, const string& rsg_, const string& outputFile_);
+
+    virtual void beam(double& beamX, double& beamY, double& beamAngle);
+    virtual SkillType selectSkill();
+    virtual void updateFitness();
+
+};
+
+/*
+ * Receiver half of the two-agent pass task.
+ *
+ * Runs as a second agent (a different --unum, same team) alongside a passAgent.
+ * The passAgent owns the trial FSM and the monitor (beam + playmode); this agent
+ * only observes and moves.  It is beamed to the nominal rendezvous point
+ * (pass_target_dist / pass_target_angle); once the ball is struck it walks to
+ * the ball and tries to stop over it.
+ *
+ * It also owns *scoring*: each trial is scored by how close the ball actually
+ * gets to this receiver (ground truth), with a completion bonus if the ball
+ * arrives within pass_receiver_catch_radius.  Fitness (mean over pass_num_trials)
+ * is written to this agent's --experimentout file, which the training loop reads.
+ *
+ * Trials are kept in sync with the passer purely through the shared playmode:
+ * PlayOn -> ball tracked;  a PlayOn -> BeforeKickOff edge ends and scores a trial.
+ */
+class OptimizationBehaviorPassReceiver : public NaoBehavior {
+    const string outputFile;
+
+    int trial;
+    int numTrials;
+    double totalFitness;
+    double catchRadius;
+    double reach;          // how far the receiver may stray from the rendezvous
+
+    bool wasBallCentred;   // for detecting the passer's per-trial ball reset
+    bool sawFirstReset;
+    double trialStartTime; // fallback so a whiffed trial can't stall the receiver
+    bool ballKicked;
+    double minBallDist;    // closest the ball got to the receiver
+    double travel;         // how far the receiver had to move to get there
+
+    VecPosition rendezvous;
+
+    void resetTrial();
+    void scoreTrial();
+    void writeFitnessToOutputFile(double fitness);
+
+public:
+
+    OptimizationBehaviorPassReceiver(const std::string teamName, int uNum, const map<
+                                     string, string>& namedParams_, const string& rsg_, const string& outputFile_);
 
     virtual void beam(double& beamX, double& beamY, double& beamAngle);
     virtual SkillType selectSkill();

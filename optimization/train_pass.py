@@ -23,9 +23,9 @@ Usage (inside the container):
 import argparse, concurrent.futures, os, random, statistics, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-START = os.path.join(ROOT, "optimization", "start-pass-optimization.sh")
 DEFAULTS = os.path.join(ROOT, "paramfiles", "defaultParams.txt")
 BEST_OUT = os.path.join(ROOT, "paramfiles", "pass_best.txt")
+START = os.path.join(ROOT, "optimization", "start-pass-optimization.sh")   # overridable
 
 # kick-shaping parameters for SKILL_KICK_LEFT_LEG (see skills/kick.skl)
 PARAMS = ["kick_p1", "kick_p2", "kick_p3", "kick_p4", "kick_p5",
@@ -51,7 +51,7 @@ def read_defaults():
     return vals
 
 
-def evaluate(theta, body_type):
+def evaluate(theta, body_type, script):
     """Run one episode for parameter vector theta; return scalar fitness."""
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      dir="/tmp", prefix="cand_") as cf:
@@ -60,7 +60,7 @@ def evaluate(theta, body_type):
         cand = cf.name
     out = cand.replace("cand_", "fit_")
     try:
-        r = subprocess.run([START, str(body_type), cand, out],
+        r = subprocess.run([script, str(body_type), cand, out],
                            capture_output=True, text=True, timeout=300)
         if r.returncode != 0 or not os.path.exists(out):
             return FAIL_FITNESS
@@ -84,6 +84,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--type", type=int, default=0, help="nao body type")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--script", default=START,
+                    help="episode runner (start-pass-optimization.sh or start-2agent-pass.sh)")
     args = ap.parse_args()
     random.seed(args.seed)
 
@@ -101,9 +103,9 @@ def main():
         t0 = time.time()
         if args.jobs > 1:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-                fits = list(ex.map(lambda th: evaluate(th, args.type), pop))
+                fits = list(ex.map(lambda th: evaluate(th, args.type, args.script), pop))
         else:
-            fits = [evaluate(th, args.type) for th in pop]
+            fits = [evaluate(th, args.type, args.script) for th in pop]
 
         order = sorted(range(len(pop)), key=lambda i: fits[i], reverse=True)
         elite = [pop[i] for i in order[:n_elite]]
