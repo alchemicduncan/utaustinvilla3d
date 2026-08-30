@@ -14,3 +14,5 @@ devenv.local.nix
 
 # optimization run artifacts
 paramfiles/pass_best.txt
+# core dumps (upstream tracks a stale one)
+core
