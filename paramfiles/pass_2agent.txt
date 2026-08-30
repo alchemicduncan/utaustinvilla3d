@@ -8,6 +8,9 @@ pass_two_agent	1
 pass_receiver_unum	3
 pass_receiver_team	Left
 
+// Two-agent episodes are ~2x slower than single-agent, so fewer trials.
+pass_num_trials	15
+
 // The ball counts as "received" if it gets this close to the moving receiver;
 // the receiver only chases a ball that comes within pass_receiver_reach of
 // where it was standing (a short / misdirected pass is not collectable).

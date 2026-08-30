@@ -583,15 +583,19 @@ void OptimizationBehaviorPassReceiver::updateFitness() {
     if (!ballKicked && ball.getMagnitude() > 0.5) {
         ballKicked = true;
     }
-    // Skip implausible ground-truth reads (transient during a teleport): the
-    // receiver can never legitimately be more than ~reach from the rendezvous.
-    double t = rendezvous.getDistanceTo(me);
-    if (ballKicked && t < reach + 3.0) {
-        double d = me.getDistanceTo(ball);
+    if (ballKicked) {
+        // Distance from the ball to the receiver. Fall back to the fixed
+        // rendezvous point when the receiver's own ground-truth read is
+        // implausible (transient during a teleport), so a bad read can never
+        // blow up the fitness.
+        double t = rendezvous.getDistanceTo(me);
+        double dRcv = (t < reach + 3.0) ? me.getDistanceTo(ball) : 1e9;
+        double dRdv = rendezvous.getDistanceTo(ball);
+        double d = (dRcv < dRdv) ? dRcv : dRdv;
         if (d < minBallDist) {
             minBallDist = d;
         }
-        if (t > travel) {
+        if (t < reach + 3.0 && t > travel) {
             travel = t;
         }
     }
