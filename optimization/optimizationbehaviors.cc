@@ -288,14 +288,18 @@ std::string OptimizationBehaviorPass::twoAgentResetMsg() {
     double by = atof(namedParams.find("pass_beam_y")->second.c_str());
     double heading = atof(namedParams.find("pass_beam_angle")->second.c_str());
     double rxHeading = atof(namedParams.find("pass_target_angle")->second.c_str()) + 180.0;
+    // Low placement height: the repos teleports the torso and the robot drops
+    // to it, so a near-standing height keeps repeated trials from destabilising
+    // the walk engine.
+    const double Z = 0.34;
     std::ostringstream m;
     m << "(playMode PlayOn)"
       << "(ball (pos 0 0 0.042) (vel 0 0 0))"
       << "(agent (unum " << passerUnum << ") (team " << agentTeamName
-      << ") (pos " << bx << " " << by << " 0.4) (rot 0 0 " << heading << "))"
+      << ") (pos " << bx << " " << by << " " << Z << ") (rot 0 0 " << heading << "))"
       << "(agent (unum " << receiverUnum << ") (team " << receiverTeam
       << ") (pos " << passTarget.getX() << " " << passTarget.getY()
-      << " 0.4) (rot 0 0 " << rxHeading << "))";
+      << " " << Z << ") (rot 0 0 " << rxHeading << "))";
     return m.str();
 }
 
@@ -305,13 +309,15 @@ void OptimizationBehaviorPass::initTrial() {
     backwards = false;
     fallen = false;
     kickStartTime = -1;
+    reposTime = -1;
     timeStart = worldModel->getTime();
     initialized = false;
     resetSkills();
 
     if (twoAgent) {
-        // Stay in PlayOn; reposition the ball and both agents via the monitor
-        // (self-beams are ignored outside dead-ball playmodes).
+        // Stay in PlayOn; reposition ball + both agents via the monitor.
+        // (Self-beams are ignored in open play, and BeforeKickOff drags the
+        // receiver's rendezvous onside.)
         initBeamed = true;
         setMonMessage(twoAgentResetMsg());
     } else {
@@ -336,6 +342,11 @@ SkillType OptimizationBehaviorPass::selectSkill() {
         return SKILL_STAND;
     }
 
+    // Two-agent: let the robot settle after the post-BeforeKickOff repos drop.
+    if (twoAgent && (reposTime < 0 || time - reposTime < 1.0)) {
+        return SKILL_STAND;
+    }
+
     // Walk up to the ball (if needed), line up and kick toward the target.
     return kickBall(KICK_FORWARD, passTarget);
 }
@@ -355,11 +366,13 @@ void OptimizationBehaviorPass::updateFitness() {
         beamChecked = true;
 
         if (twoAgent) {
-            // Re-send the repos: the first send (in initTrial, right after this
-            // agent connects) can race the receiver's connection.
+            // Re-send the repos (the first send in initTrial can race the
+            // receiver's connection) and record when, so selectSkill() can let
+            // the robot settle before kicking.
             setMonMessage(twoAgentResetMsg());
+            reposTime = time;
             double ballDistance = worldModel->getBallGroundTruth().getMagnitude();
-            if (ballDistance > 0.3) {
+            if (ballDistance > 0.5) {
                 if (failedLastBeamCheck) {
                     failedLastBeamCheck = false;
                     totalFitness += -100;
@@ -371,7 +384,7 @@ void OptimizationBehaviorPass::updateFitness() {
                 return;
             }
             failedLastBeamCheck = false;
-            return;   // already in PlayOn
+            return;
         }
 
         VecPosition meTruth = worldModel->getMyPositionGroundTruth();
@@ -570,13 +583,14 @@ void OptimizationBehaviorPassReceiver::updateFitness() {
     if (!ballKicked && ball.getMagnitude() > 0.5) {
         ballKicked = true;
     }
-    // Skip implausible ground-truth reads (transient during a teleport).
-    if (ballKicked && me.getMagnitude() < 20.0) {
+    // Skip implausible ground-truth reads (transient during a teleport): the
+    // receiver can never legitimately be more than ~reach from the rendezvous.
+    double t = rendezvous.getDistanceTo(me);
+    if (ballKicked && t < reach + 3.0) {
         double d = me.getDistanceTo(ball);
         if (d < minBallDist) {
             minBallDist = d;
         }
-        double t = rendezvous.getDistanceTo(me);
         if (t > travel) {
             travel = t;
         }

@@ -54,6 +54,7 @@ class OptimizationBehaviorPass : public NaoBehavior {
 
     double timeStart;
     double kickStartTime;
+    double reposTime;      // two-agent: when the monitor repos was sent
     bool hasKicked;
     bool beamChecked;
     bool failedLastBeamCheck;
