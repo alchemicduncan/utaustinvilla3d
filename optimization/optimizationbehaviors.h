@@ -56,6 +56,7 @@ class OptimizationBehaviorPass : public NaoBehavior {
     double kickStartTime;
     double reposTime;      // two-agent: when the monitor repos was sent
     bool hasKicked;
+    bool ballEverMoved;
     bool beamChecked;
     bool failedLastBeamCheck;
     bool backwards;
@@ -67,6 +68,11 @@ class OptimizationBehaviorPass : public NaoBehavior {
 
     double INIT_WAIT_TIME;
     VecPosition passTarget;
+
+    // Pre-positioned mode: beam the robot right at the ball (aligned with the
+    // target) and fire SKILL_KICK_LEFT_LEG directly - no walk-up. Removes the
+    // approach/positioning variance so training can calibrate power+aim cleanly.
+    bool prekick;
 
     // Two-agent mode: stay in PlayOn, reposition ball + both agents via monitor.
     bool twoAgent;

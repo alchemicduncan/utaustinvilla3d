@@ -56,11 +56,13 @@ rcssserver3d into `/opt/simspark`, then you build the agent against it:
 ./scripts/build-in-docker.sh              # -> ./agentspark
 ./scripts/build-in-docker.sh smoke        # build + run agent against rcssserver3d
 ./scripts/build-in-docker.sh getup        # force a fall, verify the get-up behavior
-./scripts/build-in-docker.sh pass         # one targeted-kick episode (baseline fitness)
-./scripts/build-in-docker.sh pass-train   # CEM training loop for the pass (see optimization/)
-./scripts/build-in-docker.sh pass2        # one two-agent pass episode (passer + receiver)
-./scripts/build-in-docker.sh pass2-train  # CEM training loop for the two-agent pass
-./scripts/build-in-docker.sh shell        # interactive shell in the container
+./scripts/build-in-docker.sh pass          # one targeted-kick episode (baseline fitness)
+./scripts/build-in-docker.sh prekick       # one pre-positioned kick episode (low-noise)
+./scripts/build-in-docker.sh pass-train    # CMA-ES/CEM training loop for the pass
+./scripts/build-in-docker.sh scaled-train NAME   # full resumable CMA-ES run -> runs/NAME/
+./scripts/build-in-docker.sh pass2         # one two-agent pass episode (passer + receiver)
+./scripts/build-in-docker.sh pass2-train   # training loop for the two-agent pass
+./scripts/build-in-docker.sh shell         # interactive shell in the container
 ```
 
 The repo is bind-mounted, so `./agentspark` ends up in your working tree. The

@@ -10,7 +10,8 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential cmake pkg-config git ca-certificates \
+      build-essential cmake pkg-config git ca-certificates gdb \
+      python3 python3-pip \
       ruby-dev \
       libboost-all-dev \
       libode-dev \
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libdevil-dev \
       libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev libglew-dev \
       libx11-dev zlib1g-dev \
+ && pip3 install --no-cache-dir --break-system-packages 'cma>=4.0.0' \
  && rm -rf /var/lib/apt/lists/*
 
 # --- SimSpark + rcssserver3d, pinned ----------------------------------------

@@ -70,6 +70,21 @@ pass_train() {
   run bash -c "$ensure_build; python3 optimization/train_pass.py ${*:-}"
 }
 
+scaled_train() {
+  # ./scripts/build-in-docker.sh scaled-train <run-name> [--resume | extra args]
+  run bash -c "$ensure_build; ./optimization/run-scaled-training.sh ${*:-}"
+}
+
+prekick() {
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-pass-optimization.sh 0 paramfiles/pass_prekick.txt /tmp/pk.txt
+    echo; echo -n 'prekick baseline fitness: '; cat /tmp/pk.txt
+    echo '--- per-trial ---'; grep -hE '^Trial' /tmp/pass_agent_*.log | tail -8
+  "
+}
+
 pass2() {
   # one two-agent pass episode (passer + moving receiver)
   run bash -c "
@@ -90,9 +105,11 @@ case "${1:-build}" in
   shell)       run bash ;;
   smoke|test)  smoke ;;
   getup)       getup ;;
-  pass)        pass ;;
-  pass2)       pass2 ;;
-  pass-train)  shift; pass_train "$@" ;;
-  pass2-train) shift; pass2_train "$@" ;;
+  pass)         pass ;;
+  prekick)      prekick ;;
+  pass2)        pass2 ;;
+  pass-train)   shift; pass_train "$@" ;;
+  pass2-train)  shift; pass2_train "$@" ;;
+  scaled-train) shift; scaled_train "$@" ;;
   *)           run "$@" ;;
 esac

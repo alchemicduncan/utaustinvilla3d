@@ -23,8 +23,16 @@ Also a good idea is to turn off real-time mode and turn on sync mode for faster 
 `OptimizationBehaviorPass` (in [optimizationbehaviors.cc](optimizationbehaviors.cc)) trains a kick that delivers the ball **to a target point**, not just as far as possible. The ball starts at the field centre; the robot is beamed just behind it (`pass_beam_*` in [../paramfiles/pass_defaults.txt](../paramfiles/pass_defaults.txt)); a target is read from `pass_target_dist` / `pass_target_angle`; the robot runs `kickBall(KICK_FORWARD, target)` and each trial is scored by `-‖ball_rest − target‖`, with extra penalties for falling, whiffing, or kicking backwards. Fitness is the mean over `PASS_NUM_TRIALS` kicks.
 
 * **One episode:** `./start-pass-optimization.sh <body_type> <params_file> <output_file>` — self-configures the installed SimSpark for optimization (ground truth on, beam noise off, real-time off, sync on) and layers `<params_file>` on top of the defaults + `pass_defaults.txt`.
-* **Training:** [train_pass.py](train_pass.py) — a Cross-Entropy Method loop over the kick-shaping parameters (`kick_p1..p9`, `kick_scale1..3`). Swap in PGPE / ARS / PPO here; the C++ side is unchanged.
-* **In the container:** `./scripts/build-in-docker.sh pass` (one baseline episode) or `./scripts/build-in-docker.sh pass-train --iterations 15 --pop 16 --jobs 4`.
+* **Training:** [train_pass.py](train_pass.py) — CMA-ES (default) or CEM over the kick-shaping parameters. Resumable, logs `history.csv` + `incumbent.txt` + `checkpoint.json` to `--out-dir`, and re-evaluates the distribution mean on fresh episodes each iteration (`--reeval`).
+* **In the container:** `./scripts/build-in-docker.sh pass` (one baseline episode) or `./scripts/build-in-docker.sh pass-train --optimizer cmaes --iterations 20 --pop 16 --jobs 4`.
+
+### Pre-positioned kick (`pass_prekick`) — for scaled runs
+
+`paramfiles/pass_prekick.txt` sets `pass_prekick 1`: the robot is beamed **right at the ball**, aligned with the target, and fires the kick directly — no walk-up. This removes the approach/positioning variance, so per-trial delivery error goes from ~1.5 m std to ~0.06 m std. The fitness is then almost pure power/aim calibration and CMA-ES converges cleanly.
+
+* **Baseline:** `./scripts/build-in-docker.sh prekick`
+* **Scaled run:** `./scripts/build-in-docker.sh scaled-train <run-name>` — auto-sizes `--jobs` from the core count, CMA-ES, 40 iterations × pop 24 × 40 trials/episode, writes to `runs/<run-name>/`. Resume with `scaled-train <run-name> --resume`.
+* Portable: the container has everything (`cma`, `python3`); run `optimization/run-scaled-training.sh` directly on a bigger box.
 
 **Contextual (adaptive) version:** sample a different target per episode, write `pass_target_dist` / `pass_target_angle` into the candidate params file alongside the kick params, and make the policy a function of the target — i.e. learn `π(kick_params | target)` rather than a single fixed kick.
 

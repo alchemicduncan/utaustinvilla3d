@@ -16,3 +16,6 @@ devenv.local.nix
 paramfiles/pass_best.txt
 # core dumps (upstream tracks a stale one)
 core
+
+# training run outputs
+runs/

@@ -259,6 +259,9 @@ OptimizationBehaviorPass::OptimizationBehaviorPass(const std::string teamName,
     numTrials = (it != namedParams.end()) ? atoi(it->second.c_str())
                                           : PASS_NUM_TRIALS_DEFAULT;
 
+    it = namedParams.find("pass_prekick");
+    prekick = (it != namedParams.end() && atoi(it->second.c_str()) != 0);
+
     it = namedParams.find("pass_two_agent");
     twoAgent = (it != namedParams.end() && atoi(it->second.c_str()) != 0);
     passerUnum = uNum;
@@ -278,6 +281,18 @@ void OptimizationBehaviorPass::computeTarget() {
 }
 
 void OptimizationBehaviorPass::beam(double& beamX, double& beamY, double& beamAngle) {
+    if (prekick) {
+        // Beam right at the ball, aligned with the target: take the standard
+        // kick foot-offset and rotate it into the target direction.
+        double angle = atof(namedParams.find("pass_target_angle")->second.c_str());
+        double offX = atof(namedParams.find("kick_xoffset")->second.c_str());
+        double offY = atof(namedParams.find("kick_yoffset")->second.c_str());
+        double a = Deg2Rad(angle);
+        beamX = offX * cos(a) - offY * sin(a);
+        beamY = offX * sin(a) + offY * cos(a);
+        beamAngle = angle;
+        return;
+    }
     beamX     = atof(namedParams.find("pass_beam_x")->second.c_str());
     beamY     = atof(namedParams.find("pass_beam_y")->second.c_str());
     beamAngle = atof(namedParams.find("pass_beam_angle")->second.c_str());
@@ -305,6 +320,7 @@ std::string OptimizationBehaviorPass::twoAgentResetMsg() {
 
 void OptimizationBehaviorPass::initTrial() {
     hasKicked = false;
+    ballEverMoved = false;
     beamChecked = false;
     backwards = false;
     fallen = false;
@@ -344,6 +360,16 @@ SkillType OptimizationBehaviorPass::selectSkill() {
 
     // Two-agent: let the robot settle after the post-BeforeKickOff repos drop.
     if (twoAgent && (reposTime < 0 || time - reposTime < 1.0)) {
+        return SKILL_STAND;
+    }
+
+    if (prekick) {
+        // Already stood right at the ball, aligned with the target: just fire.
+        if (!hasKicked) {
+            hasKicked = true;
+            kickStartTime = time;
+            return SKILL_KICK_LEFT_LEG;
+        }
         return SKILL_STAND;
     }
 
@@ -418,20 +444,29 @@ void OptimizationBehaviorPass::updateFitness() {
 
     // The ball starts at the field centre; once it has clearly left, it was
     // struck. (Displacement is more reliable here than sampling absVel.)
-    if (!hasKicked && ballTruth.getMagnitude() > PASS_BALL_MOVED_DIST) {
-        hasKicked = true;
-        kickStartTime = time;
+    if (ballTruth.getMagnitude() > PASS_BALL_MOVED_DIST) {
+        ballEverMoved = true;
+        if (!hasKicked) {
+            hasKicked = true;
+            kickStartTime = time;
+        }
     }
 
-    if (ballTruth.getX() < -0.25) {
+    // Distance the ball travelled along the target direction (negative = wrong way).
+    VecPosition tdir = passTarget;
+    tdir.normalize();
+    double alongTarget = ballTruth.getX() * tdir.getX() + ballTruth.getY() * tdir.getY();
+    if (alongTarget < -0.25) {
         backwards = true;
     }
     if (worldModel->isFallen()) {
         fallen = true;
     }
 
-    bool settled = hasKicked && kickStartTime > 0 &&
-                   time - kickStartTime > 0.5 && !isBallMoving(this->worldModel);
+    // Wait until the ball has actually moved and then come to rest (the kick
+    // motion itself takes several seconds; prekick fires it before the ball
+    // stirs, so gate on ballEverMoved rather than a short post-fire delay).
+    bool settled = ballEverMoved && !isBallMoving(this->worldModel);
     bool timedOut = time - (timeStart + INIT_WAIT_TIME) > PASS_TRIAL_TIMEOUT;
 
     if (!settled && !timedOut) {
@@ -441,7 +476,7 @@ void OptimizationBehaviorPass::updateFitness() {
     double error = ballTruth.getDistanceTo(passTarget);
     double fitness = -error;
 
-    if (!hasKicked || backwards) {
+    if (!ballEverMoved || backwards) {
         // Whiffed or kicked the wrong way: worse than any legitimate miss.
         fitness = -(passTarget.getMagnitude() + 5.0);
     }
@@ -453,7 +488,7 @@ void OptimizationBehaviorPass::updateFitness() {
          << "  target=(" << passTarget.getX() << ", " << passTarget.getY() << ")"
          << "  ball=(" << ballTruth.getX() << ", " << ballTruth.getY() << ")"
          << "  error=" << error
-         << "  kicked=" << hasKicked << " backwards=" << backwards
+         << "  moved=" << ballEverMoved << " backwards=" << backwards
          << " fell=" << fallen
          << "  fitness=" << fitness << endl;
 
