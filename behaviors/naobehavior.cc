@@ -429,6 +429,21 @@ void NaoBehavior::act() {
  * Throws string
  */
 void NaoBehavior::readSkillsFromFile( const std::string& filename) {
+    readSkillsFromFile( filename, namedParams );
+}
+
+/* Re-parse skills/kick.skl with a per-kick $kick_power, so the pass optimizer
+   can vary kick strength (and hence distance) trial to trial. */
+void NaoBehavior::reloadKickSkill( double kickPower ) {
+    map<string, string> p( namedParams.begin(), namedParams.end() );
+    char buf[32];
+    snprintf( buf, sizeof(buf), "%.6f", kickPower );
+    p["kick_power"] = buf;
+    readSkillsFromFile( "./skills/kick.skl", p );
+}
+
+void NaoBehavior::readSkillsFromFile( const std::string& filename,
+                                     const map<string, string>& namedParams) {
 //  cerr << "Loading skills from file " << filename << endl;
 
 

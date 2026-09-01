@@ -11,3 +11,11 @@ libs/*.so*
 .devenv*
 devenv.local.nix
 .direnv
+
+# optimization run artifacts
+paramfiles/pass_best.txt
+# core dumps (upstream tracks a stale one)
+core
+
+# training run outputs
+runs/

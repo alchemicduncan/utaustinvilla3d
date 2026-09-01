@@ -15,3 +15,62 @@ Optimization behaviors use the `updateFitness()` method, which is called every s
 Remember to turn on ground truth information when running optimizations for accurate measurements and correct values for the `worldModel->getMyPositionGroundTruth()`, `worldModel->getMyAngDegGroundTruth()`, and `worldModel->getBallGroundTruth()` methods.  To do this you need to edit the *&lt;server_install_dir&gt;/share/rcssserver3d/rsg/agent/nao/naoneckhead.rsg* file and change the `setSenseMyPos`, `setSenseMyOrien`, and `setSenseBallPos` values to `true`.  You might want to call `worldModel->setUseGroundTruthDataForLocalization(true)` if the agent needs to always know exactly where it is on the field (such as might be the case when optimizing a walk and needing the agent to purposely walk to a specific target point on the field). 
 
 Also a good idea is to turn off real-time mode and turn on sync mode for faster runs.  To do this set `$agentSyncMode` to `true` in *~/.simspark/spark.rb* and set `$enableRealTimeMode` to `false` in *&lt;server_install_dir&gt;/share/rcssserver3d/rcssserver3d.rb*.  Additionally you might want to turn off beam noise if the position of a beamed agent is being checked (as is done in the example optimization tasks).  To turn off beam noise set `BeamNoiseXY` and `BeamNoiseAngle` to `0` in *&lt;server_install_dir&gt;/share/rcssserver3d/naosoccersim.rb*.
+
+---
+
+## Pass / targeted-kick task (`passAgent`)
+
+`OptimizationBehaviorPass` (in [optimizationbehaviors.cc](optimizationbehaviors.cc)) trains a kick that delivers the ball **to a target point**, not just as far as possible. The ball starts at the field centre; the robot is beamed just behind it (`pass_beam_*` in [../paramfiles/pass_defaults.txt](../paramfiles/pass_defaults.txt)); a target is read from `pass_target_dist` / `pass_target_angle`; the robot runs `kickBall(KICK_FORWARD, target)` and each trial is scored by `-‖ball_rest − target‖`, with extra penalties for falling, whiffing, or kicking backwards. Fitness is the mean over `PASS_NUM_TRIALS` kicks.
+
+* **One episode:** `./start-pass-optimization.sh <body_type> <params_file> <output_file>` — self-configures the installed SimSpark for optimization (ground truth on, beam noise off, real-time off, sync on) and layers `<params_file>` on top of the defaults + `pass_defaults.txt`.
+* **Training:** [train_pass.py](train_pass.py) — CMA-ES (default) or CEM over the kick-shaping parameters. Resumable, logs `history.csv` + `incumbent.txt` + `checkpoint.json` to `--out-dir`, and re-evaluates the distribution mean on fresh episodes each iteration (`--reeval`).
+* **In the container:** `./scripts/build-in-docker.sh pass` (one baseline episode) or `./scripts/build-in-docker.sh pass-train --optimizer cmaes --iterations 20 --pop 16 --jobs 4`.
+
+### Pre-positioned kick (`pass_prekick`) — for scaled runs
+
+`paramfiles/pass_prekick.txt` sets `pass_prekick 1`: the robot is beamed **right at the ball**, aligned with the target, and fires the kick directly — no walk-up. This removes the approach/positioning variance, so per-trial delivery error goes from ~1.5 m std to ~0.06 m std. The fitness is then almost pure power/aim calibration and CMA-ES converges cleanly.
+
+* **Baseline:** `./scripts/build-in-docker.sh prekick`
+
+### Contextual pass — kick any distance / direction
+
+`paramfiles/pass_contextual.txt` makes each trial sample a target at a random
+**distance** (3–12 m) and **heading** (±40°). Two mechanisms:
+
+* **Aim is geometric** — the robot is beamed facing that trial's target, and the
+  kick goes straight ahead. No policy needed for direction.
+* **Distance is a learned policy** — `skills/kick.skl` gained a `$kick_power`
+  multiplier on the follow-through swing gains, and the agent re-parses the kick
+  each trial with `power = kick_power_a + kick_power_b·dn + kick_power_c·dn²`
+  (`dn` = target distance normalised to [-1, 1]). CMA-ES searches the 12 kick
+  shape params **plus** `kick_power_{a,b,c}`.
+
+The same 48 `(distance, heading)` targets are used every episode (`pass_ctx_seed`)
+so candidates are compared on identical tasks — much lower selection noise.
+
+### Scaled run
+
+```
+./scripts/build-in-docker.sh scaled-train <name> contextual   # 70 iter, pop 24, CMA-ES
+./scripts/build-in-docker.sh scaled-train <name> fixed        # single 6 m target
+./scripts/build-in-docker.sh scaled-train <name> --resume
+```
+
+Writes `history.csv` / `incumbent.txt` / `checkpoint.json` to `runs/<name>/`.
+Portable — the container has `cma` + `python3`; run
+`optimization/run-scaled-training.sh` directly on a bigger box.
+
+**Contextual (adaptive) version:** sample a different target per episode, write `pass_target_dist` / `pass_target_angle` into the candidate params file alongside the kick params, and make the policy a function of the target — i.e. learn `π(kick_params | target)` rather than a single fixed kick.
+
+### Two-agent pass (`passReceiverAgent`)
+
+A second agent (`OptimizationBehaviorPassReceiver`, same team, `--unum 3`) is beamed to the rendezvous point, holds position, and — once the ball is on its way and comes within `pass_receiver_reach` — walks to it. It also owns scoring: each trial is `-min(ball→receiver distance) - 0.5·(receiver travel)`, plus a `+2` bonus if the ball got within `pass_receiver_catch_radius`. This rewards passes that actually *arrive at a teammate*, penalises short / misdirected ones, and charges for how far the receiver had to chase.
+
+In two-agent mode the passer stays in `PlayOn` and repositions the ball + both agents each trial with monitor `repos` commands (`pass_two_agent` / `pass_2agent.txt`), because self-beams are ignored outside dead-ball playmodes and `BeforeKickOff` would drag the rendezvous onside.
+
+* **One episode:** `./start-2agent-pass.sh <body_type> <params_file> <output_file>`
+* **In the container:** `./scripts/build-in-docker.sh pass2` or `pass2-train [--iterations N --pop M --jobs J]`
+
+Known limitation: the monitor `repos` teleports the torso but does not fully reset joint state, so over a long episode the passer occasionally destabilises and whiffs the last few trials (scored as a miss). Keep `pass_num_trials` modest, or add a brief `(playMode BeforeKickOff)` blip for a full reset.
+
+**Next:** make the receiver learned too (interception timing, first touch); or move the rendezvous each episode so the passer must *lead* a receiver that is already moving.

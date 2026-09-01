@@ -1,0 +1,18 @@
+// Two-agent pass overrides, layered by optimization/start-2agent-pass.sh.
+//
+// In two-agent mode the passer stays in PlayOn and repositions the ball and
+// both agents each trial via the monitor (self-beams are ignored outside
+// dead-ball playmodes). The receiver (a second agent, team Right) moves to the
+// ball and owns scoring.
+pass_two_agent	1
+pass_receiver_unum	3
+pass_receiver_team	Left
+
+// Two-agent episodes are ~2x slower than single-agent, so fewer trials.
+pass_num_trials	15
+
+// The ball counts as "received" if it gets this close to the moving receiver;
+// the receiver only chases a ball that comes within pass_receiver_reach of
+// where it was standing (a short / misdirected pass is not collectable).
+pass_receiver_catch_radius	0.5
+pass_receiver_reach	2.5

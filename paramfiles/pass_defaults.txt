@@ -1,0 +1,19 @@
+// Parameters for the pass optimization agent (--optimize passAgent).
+// Layered on top of defaultParams.txt / defaultParams_t<type>.txt.
+//
+// State (the "context") - where the ball should be delivered, relative to the
+// field centre where it starts. The training loop overwrites these per episode
+// for the contextual version.
+pass_target_dist	6.0
+pass_target_angle	0.0
+
+// Kicks averaged per episode. Higher = less noisy fitness, slower episodes.
+pass_num_trials	20
+
+// Robot start pose, just behind the ball, facing +x (toward angle 0).
+pass_beam_x	-0.55
+pass_beam_y	0.0
+pass_beam_angle	0.0
+
+// Single-agent by default; the two-agent script overrides pass_two_agent.
+pass_two_agent	0

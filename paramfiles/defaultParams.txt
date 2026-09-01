@@ -216,6 +216,10 @@ kick_scale1	5.295086273579072
 kick_scale2	1.9096575829831766
 kick_scale3	0.7896144070184505
 
+# Follow-through power multiplier for SKILL_KICK_LEFT_LEG (see skills/kick.skl).
+# 1 = unchanged. The pass optimizer overrides this per-kick to hit a target distance.
+kick_power	1.0
+
 kick_max_displacement_right	0.01
 kick_max_displacement_left	0.01
 kick_max_displacement_top	0.01

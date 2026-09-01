@@ -1,0 +1,17 @@
+// Contextual pass: each trial samples a target at a random distance and
+// heading; the kick is aimed geometrically (robot beamed facing the target)
+// and its strength comes from a learned policy of the distance
+//   power = kick_power_a + kick_power_b*dn + kick_power_c*dn^2
+// (dn = distance normalised to [-1,1] over [dist_min, dist_max]).
+//
+// Train with:  train_pass.py --params contextual --fixed-file paramfiles/pass_contextual.txt
+pass_prekick	1
+pass_num_trials	48
+
+pass_target_dist_min	3.0
+pass_target_dist_max	12.0
+pass_target_angle_max	40.0
+
+// Same 48 (distance, heading) targets every episode -> paired comparison
+// between candidates, much lower selection noise.
+pass_ctx_seed	42

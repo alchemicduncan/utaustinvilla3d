@@ -219,6 +219,8 @@ protected:
     bool isIndirectKick(int pm);
 
     void readSkillsFromFile( const std::string& filename);
+    void readSkillsFromFile( const std::string& filename, const map<string, string>& namedParams );
+    void reloadKickSkill( double kickPower );
 
     bool isRightSkill( SkillType skill );
     bool isLeftSkill( SkillType skill );

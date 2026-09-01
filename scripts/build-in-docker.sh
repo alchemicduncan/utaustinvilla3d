@@ -40,9 +40,76 @@ smoke() {
   '
 }
 
+getup() {
+  run bash -c '
+    set -e
+    [ -x ./agentspark ] || { rm -f CMakeCache.txt; cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null; make -j"$(nproc)" >/dev/null; }
+    rcssserver3d --agent-port 3100 --server-port 3200 >/tmp/server.log 2>&1 &
+    sleep 4
+    ./agentspark --host=127.0.0.1 --port 3100 --team Left --unum 1 --type 0 \
+      --paramsfile paramfiles/defaultParams.txt --paramsfile paramfiles/defaultParams_t0.txt \
+      >/tmp/agent.log 2>&1 &
+    sleep 10
+    python3 scripts/getup-test.py
+  '
+}
+
+ensure_build='[ -x ./agentspark ] || { rm -f CMakeCache.txt; cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null; make -j"$(nproc)" >/dev/null; }'
+
+pass() {
+  # one baseline pass episode with the stock kick params
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-pass-optimization.sh 0 paramfiles/pass_defaults.txt /tmp/pass_fitness.txt
+    echo; echo -n 'mean fitness (negative delivery error): '; cat /tmp/pass_fitness.txt
+  "
+}
+
+pass_train() {
+  run bash -c "$ensure_build; python3 optimization/train_pass.py ${*:-}"
+}
+
+scaled_train() {
+  # ./scripts/build-in-docker.sh scaled-train <run-name> [--resume | extra args]
+  run bash -c "$ensure_build; ./optimization/run-scaled-training.sh ${*:-}"
+}
+
+prekick() {
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-pass-optimization.sh 0 paramfiles/pass_prekick.txt /tmp/pk.txt
+    echo; echo -n 'prekick baseline fitness: '; cat /tmp/pk.txt
+    echo '--- per-trial ---'; grep -hE '^Trial' /tmp/pass_agent_*.log | tail -8
+  "
+}
+
+pass2() {
+  # one two-agent pass episode (passer + moving receiver)
+  run bash -c "
+    set -e
+    $ensure_build
+    ./optimization/start-2agent-pass.sh 0 paramfiles/pass_defaults.txt /tmp/pass2_fitness.txt
+    echo; echo -n 'receiver mean fitness (negative closest-approach - travel + bonus): '; cat /tmp/pass2_fitness.txt
+    echo '--- per-trial ---'; grep -hE '^Trial' /tmp/pass2_receiver_*.log | tail -20
+  "
+}
+
+pass2_train() {
+  run bash -c "$ensure_build; python3 optimization/train_pass.py --script optimization/start-2agent-pass.sh ${*:-}"
+}
+
 case "${1:-build}" in
-  build) build ;;
-  shell) run bash ;;
-  smoke|test) smoke ;;
-  *)     run "$@" ;;
+  build)       build ;;
+  shell)       run bash ;;
+  smoke|test)  smoke ;;
+  getup)       getup ;;
+  pass)         pass ;;
+  prekick)      prekick ;;
+  pass2)        pass2 ;;
+  pass-train)   shift; pass_train "$@" ;;
+  pass2-train)  shift; pass2_train "$@" ;;
+  scaled-train) shift; scaled_train "$@" ;;
+  *)           run "$@" ;;
 esac

@@ -1,0 +1,8 @@
+// Pre-positioned kick: beam the robot right at the ball (aligned with the
+// target) and fire the kick directly - no walk-up. Removes the approach
+// variance, so the fitness signal is almost pure power/aim calibration.
+pass_prekick	1
+
+// More trials per episode -> lower fitness variance (cheap here: prekick
+// episodes are ~10 s for 20 trials).
+pass_num_trials	40
