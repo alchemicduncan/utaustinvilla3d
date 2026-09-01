@@ -90,9 +90,11 @@ settar EFF_LL3 ( 50 + $kick_p1 ) EFF_LL4 ( -95 + $kick_p2 ) EFF_LL5 ( -15 + $kic
 wait 0.5 end
 ENDSTATE
 
-# State 15 
+# State 15
+# $kick_power scales the drive gains of the follow-through swing: >1 kicks
+# harder / further, <1 softer. Default 1 (see paramfiles/defaultParams.txt).
 STARTSTATE
-setscale EFF_LL3 ( 3 + $kick_scale1 ) EFF_LL4 ( 3 + $kick_scale2 ) EFF_LL5 ( 3 + $kick_scale3 ) end
+setscale EFF_LL3 ( ( 3 + $kick_scale1 ) * $kick_power ) EFF_LL4 ( ( 3 + $kick_scale2 ) * $kick_power ) EFF_LL5 ( ( 3 + $kick_scale3 ) * $kick_power ) end
 settar EFF_LL3 ( 90 + $kick_p4 ) EFF_LL4 ( 0 + $kick_p5 ) EFF_LL5 ( -15 + $kick_p6 ) end
 wait 0.5 end
 ENDSTATE

@@ -36,6 +36,10 @@ START = os.path.join(ROOT, "optimization", "start-pass-optimization.sh")
 DEFAULT_PARAMS = ["kick_p1", "kick_p2", "kick_p3", "kick_p4", "kick_p5",
                   "kick_p6", "kick_p7", "kick_p8", "kick_p9",
                   "kick_scale1", "kick_scale2", "kick_scale3"]
+# Contextual run also searches the power->distance policy coefficients.
+CONTEXTUAL_PARAMS = DEFAULT_PARAMS + ["kick_power_a", "kick_power_b", "kick_power_c"]
+# Starting values for params not present in defaultParams.txt.
+PARAM_SEED = {"kick_power_a": 1.0, "kick_power_b": 0.3, "kick_power_c": 0.0}
 FAIL_FITNESS = -100.0
 
 
@@ -153,7 +157,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--script", default=START)
     ap.add_argument("--params", default=",".join(DEFAULT_PARAMS),
-                    help="comma-separated param names to optimise")
+                    help="comma-separated param names to optimise "
+                         "('contextual' = the kick shape + power-policy set)")
     ap.add_argument("--fixed-file", default=None,
                     help="params file prepended to every candidate")
     ap.add_argument("--ep-timeout", type=float, default=300.0)
@@ -163,9 +168,10 @@ def main():
     ap.add_argument("--resume", action="store_true")
     args = ap.parse_args()
 
-    params = args.params.split(",")
+    params = (CONTEXTUAL_PARAMS if args.params == "contextual"
+              else args.params.split(","))
     d = read_defaults()
-    mu0 = [d[p] for p in params]
+    mu0 = [d.get(p, PARAM_SEED.get(p, 0.0)) for p in params]
     sigma0_vec = [abs(m) * args.sigma0 + 0.3 for m in mu0]
 
     fixed_text = ""

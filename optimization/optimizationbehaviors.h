@@ -69,6 +69,19 @@ class OptimizationBehaviorPass : public NaoBehavior {
     double INIT_WAIT_TIME;
     VecPosition passTarget;
 
+    // Contextual mode: each trial samples a target (distance in [dMin,dMax],
+    // heading in pass_target_angle +/- aMax). The kick is aimed geometrically
+    // (robot beamed facing the target) and its strength is set by a learned
+    // policy of the target distance:  power = powA + powB*dn + powC*dn^2
+    // (dn = target distance normalised to [-1,1] over the range).
+    double dMin, dMax, aMax;
+    double powA, powB, powC;
+    unsigned long long rngState;   // local RNG - global rand() is used elsewhere
+    double curDist, curAngle;      // this trial's sampled target
+    double nextRand();
+    void sampleTarget();
+    double kickPowerForDist(double d) const;
+
     // Pre-positioned mode: beam the robot right at the ball (aligned with the
     // target) and fire SKILL_KICK_LEFT_LEG directly - no walk-up. Removes the
     // approach/positioning variance so training can calibrate power+aim cleanly.

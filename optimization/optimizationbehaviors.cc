@@ -262,6 +262,22 @@ OptimizationBehaviorPass::OptimizationBehaviorPass(const std::string teamName,
     it = namedParams.find("pass_prekick");
     prekick = (it != namedParams.end() && atoi(it->second.c_str()) != 0);
 
+    double baseDist  = atof(namedParams.find("pass_target_dist")->second.c_str());
+    it = namedParams.find("pass_target_dist_min");
+    dMin = (it != namedParams.end()) ? atof(it->second.c_str()) : baseDist;
+    it = namedParams.find("pass_target_dist_max");
+    dMax = (it != namedParams.end()) ? atof(it->second.c_str()) : baseDist;
+    it = namedParams.find("pass_target_angle_max");
+    aMax = (it != namedParams.end()) ? atof(it->second.c_str()) : 0.0;
+    it = namedParams.find("kick_power_a");
+    powA = (it != namedParams.end()) ? atof(it->second.c_str()) : 1.0;
+    it = namedParams.find("kick_power_b");
+    powB = (it != namedParams.end()) ? atof(it->second.c_str()) : 0.0;
+    it = namedParams.find("kick_power_c");
+    powC = (it != namedParams.end()) ? atof(it->second.c_str()) : 0.0;
+    it = namedParams.find("pass_ctx_seed");
+    rngState = (it != namedParams.end()) ? (unsigned long long)atoll(it->second.c_str()) : 42ULL;
+
     it = namedParams.find("pass_two_agent");
     twoAgent = (it != namedParams.end() && atoi(it->second.c_str()) != 0);
     passerUnum = uNum;
@@ -270,21 +286,39 @@ OptimizationBehaviorPass::OptimizationBehaviorPass(const std::string teamName,
     it = namedParams.find("pass_receiver_team");
     receiverTeam = (it != namedParams.end()) ? it->second : string("Right");
 
-    computeTarget();
-    initTrial();
+    initTrial();   // samples the first target
 }
 
-void OptimizationBehaviorPass::computeTarget() {
-    double dist  = atof(namedParams.find("pass_target_dist")->second.c_str());
-    double angle = atof(namedParams.find("pass_target_angle")->second.c_str());
-    passTarget = VecPosition(dist * cosDeg(angle), dist * sinDeg(angle), 0);
+double OptimizationBehaviorPass::nextRand() {
+    // Local LCG (SplitMix-ish) - global rand() is consumed elsewhere per cycle,
+    // so we can't rely on it for a reproducible target sequence.
+    rngState = rngState * 6364136223846793005ULL + 1442695040888963407ULL;
+    return (double)(rngState >> 33) / (double)(1ULL << 31);
+}
+
+void OptimizationBehaviorPass::sampleTarget() {
+    double baseAngle = atof(namedParams.find("pass_target_angle")->second.c_str());
+    curDist  = dMin + (dMax - dMin) * nextRand();
+    curAngle = baseAngle + (2.0 * nextRand() - 1.0) * aMax;
+    passTarget = VecPosition(curDist * cosDeg(curAngle),
+                             curDist * sinDeg(curAngle), 0);
+}
+
+double OptimizationBehaviorPass::kickPowerForDist(double d) const {
+    double half = (dMax - dMin) / 2.0;
+    if (half < 1e-6) half = 1.0;
+    double dn = (d - (dMin + dMax) / 2.0) / half;
+    double p = powA + powB * dn + powC * dn * dn;
+    if (p < 0.3) p = 0.3;
+    if (p > 3.0) p = 3.0;
+    return p;
 }
 
 void OptimizationBehaviorPass::beam(double& beamX, double& beamY, double& beamAngle) {
     if (prekick) {
-        // Beam right at the ball, aligned with the target: take the standard
-        // kick foot-offset and rotate it into the target direction.
-        double angle = atof(namedParams.find("pass_target_angle")->second.c_str());
+        // Beam right at the ball, aligned with THIS trial's target heading:
+        // take the standard kick foot-offset and rotate it into that direction.
+        double angle = curAngle;
         double offX = atof(namedParams.find("kick_xoffset")->second.c_str());
         double offY = atof(namedParams.find("kick_yoffset")->second.c_str());
         double a = Deg2Rad(angle);
@@ -329,6 +363,11 @@ void OptimizationBehaviorPass::initTrial() {
     timeStart = worldModel->getTime();
     initialized = false;
     resetSkills();
+
+    sampleTarget();
+    // Set the kick strength for this trial's target distance, then re-parse
+    // the kick skill so the swing uses it.
+    reloadKickSkill(kickPowerForDist(curDist));
 
     if (twoAgent) {
         // Stay in PlayOn; reposition ball + both agents via the monitor.
@@ -485,7 +524,8 @@ void OptimizationBehaviorPass::updateFitness() {
     }
 
     cout << "Trial " << trial
-         << "  target=(" << passTarget.getX() << ", " << passTarget.getY() << ")"
+         << "  tgt(d=" << curDist << ",a=" << curAngle << ")"
+         << "  pow=" << kickPowerForDist(curDist)
          << "  ball=(" << ballTruth.getX() << ", " << ballTruth.getY() << ")"
          << "  error=" << error
          << "  moved=" << ballEverMoved << " backwards=" << backwards

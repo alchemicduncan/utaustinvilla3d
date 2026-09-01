@@ -31,8 +31,34 @@ Also a good idea is to turn off real-time mode and turn on sync mode for faster 
 `paramfiles/pass_prekick.txt` sets `pass_prekick 1`: the robot is beamed **right at the ball**, aligned with the target, and fires the kick directly — no walk-up. This removes the approach/positioning variance, so per-trial delivery error goes from ~1.5 m std to ~0.06 m std. The fitness is then almost pure power/aim calibration and CMA-ES converges cleanly.
 
 * **Baseline:** `./scripts/build-in-docker.sh prekick`
-* **Scaled run:** `./scripts/build-in-docker.sh scaled-train <run-name>` — auto-sizes `--jobs` from the core count, CMA-ES, 40 iterations × pop 24 × 40 trials/episode, writes to `runs/<run-name>/`. Resume with `scaled-train <run-name> --resume`.
-* Portable: the container has everything (`cma`, `python3`); run `optimization/run-scaled-training.sh` directly on a bigger box.
+
+### Contextual pass — kick any distance / direction
+
+`paramfiles/pass_contextual.txt` makes each trial sample a target at a random
+**distance** (3–12 m) and **heading** (±40°). Two mechanisms:
+
+* **Aim is geometric** — the robot is beamed facing that trial's target, and the
+  kick goes straight ahead. No policy needed for direction.
+* **Distance is a learned policy** — `skills/kick.skl` gained a `$kick_power`
+  multiplier on the follow-through swing gains, and the agent re-parses the kick
+  each trial with `power = kick_power_a + kick_power_b·dn + kick_power_c·dn²`
+  (`dn` = target distance normalised to [-1, 1]). CMA-ES searches the 12 kick
+  shape params **plus** `kick_power_{a,b,c}`.
+
+The same 48 `(distance, heading)` targets are used every episode (`pass_ctx_seed`)
+so candidates are compared on identical tasks — much lower selection noise.
+
+### Scaled run
+
+```
+./scripts/build-in-docker.sh scaled-train <name> contextual   # 70 iter, pop 24, CMA-ES
+./scripts/build-in-docker.sh scaled-train <name> fixed        # single 6 m target
+./scripts/build-in-docker.sh scaled-train <name> --resume
+```
+
+Writes `history.csv` / `incumbent.txt` / `checkpoint.json` to `runs/<name>/`.
+Portable — the container has `cma` + `python3`; run
+`optimization/run-scaled-training.sh` directly on a bigger box.
 
 **Contextual (adaptive) version:** sample a different target per episode, write `pass_target_dist` / `pass_target_angle` into the candidate params file alongside the kick params, and make the policy a function of the target — i.e. learn `π(kick_params | target)` rather than a single fixed kick.
 
